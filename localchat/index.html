@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>LocalChat</title>
+<!-- NO external requests — loads instantly, works fully offline on all devices -->
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #0d0f14;
+    --surface: #141720;
+    --surf2:   #1c2030;
+    --border:  #252a3a;
+    --text:    #e2e8f0;
+    --muted:   #6b7a99;
+    --accent:  #5b8af5;
+    --danger:  #f87171;
+    --success: #34d399;
+    /* System font stacks — no download needed, render instantly */
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Consolas', monospace;
+  }
+
+  html { height: 100%; }
+
+  body {
+    height: 100%; height: 100dvh;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    width: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── SCREENS ── */
+  .screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+  }
+  .screen.hidden { display: none; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 36px 36px;
+    width: 100%; max-width: 360px;
+    display: flex; flex-direction: column; gap: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    animation: up .35s cubic-bezier(.16,1,.3,1);
+  }
+
+  @keyframes up {
+    from { opacity:0; transform:translateY(16px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+
+  .logo-title {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #5b8af5, #8b5cf6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .logo-sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+
+  .field label {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted);
+  }
+
+  /* 16px minimum — prevents iOS/Android zoom on focus */
+  .field input, .field select {
+    background: var(--surf2);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: var(--sans);
+    font-size: 16px;
+    color: var(--text);
+    outline: none;
+    width: 100%;
+    -webkit-appearance: none; appearance: none;
+    transition: border-color .15s;
+  }
+
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input::placeholder { color: var(--muted); }
+  .field input.err { border-color: var(--danger); animation: shake .3s ease; }
+
+  @keyframes shake {
+    0%,100% { transform:translateX(0); }
+    25%      { transform:translateX(-7px); }
+    75%      { transform:translateX(7px); }
+  }
+
+  .err-msg { font-size: 12px; color: var(--danger); display: none; }
+  .err-msg.show { display: block; }
+
+  .btn {
+    background: linear-gradient(135deg, #5b8af5, #8b5cf6);
+    border: none; border-radius: 10px;
+    padding: 14px; font-family: var(--sans);
+    font-size: 16px; font-weight: 700;
+    color: #fff; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: opacity .15s;
+  }
+  .btn:active { opacity: .82; }
+
+  /* ── APP ── */
+  #app {
+    display: none; flex: 1;
+    flex-direction: column;
+    height: 100%; overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex; align-items: center;
+    padding: 0 12px; height: 50px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0; gap: 8px;
+  }
+
+  .h-logo {
+    font-size: 15px; font-weight: 800;
+    letter-spacing: -.3px;
+    background: linear-gradient(135deg, #5b8af5, #8b5cf6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  .tabs {
+    display: flex; gap: 3px; flex: 1;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    padding: 5px 11px; border-radius: 7px;
+    font-size: 13px; font-weight: 600;
+    color: var(--muted); cursor: pointer;
+    border: 1.5px solid transparent;
+    white-space: nowrap; flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: all .15s;
+  }
+  .tab.active {
+    color: var(--accent);
+    background: rgba(91,138,245,.1);
+    border-color: rgba(91,138,245,.28);
+  }
+
+  .h-right {
+    display: flex; align-items: center; gap: 7px; flex-shrink: 0;
+  }
+
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+    transition: background .3s;
+  }
+  .dot.on { background: var(--success); box-shadow: 0 0 6px #34d399aa; }
+
+  .count { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  /* ── BODY ── */
+  .body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+  /* ── MESSAGES ── */
+  #msgs {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: 14px 0;
+    display: flex; flex-direction: column; gap: 1px;
+    -webkit-overflow-scrolling: touch;
+  }
+  #msgs::-webkit-scrollbar { width: 3px; }
+  #msgs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg {
+    display: flex; align-items: flex-start;
+    gap: 10px; padding: 5px 14px;
+    animation: min .18s ease;
+  }
+  @keyframes min {
+    from { opacity:0; transform:translateY(3px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+
+  .avatar {
+    width: 30px; height: 30px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; color: #000;
+    flex-shrink: 0; margin-top: 1px;
+  }
+
+  .mc { flex: 1; min-width: 0; }
+
+  .mh {
+    display: flex; align-items: baseline;
+    gap: 7px; margin-bottom: 2px;
+  }
+
+  .mname { font-size: 13px; font-weight: 700; }
+  .mtime { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+
+  .mtext {
+    color: #c9d4e8; line-height: 1.55;
+    word-break: break-word; white-space: pre-wrap;
+    font-size: 14px;
+  }
+
+  .msg.own { flex-direction: row-reverse; }
+  .msg.own .mh { flex-direction: row-reverse; }
+  .msg.own .mtext {
+    background: rgba(91,138,245,.13);
+    border: 1px solid rgba(91,138,245,.22);
+    border-radius: 10px 2px 10px 10px;
+    padding: 8px 11px; display: inline-block;
+  }
+
+  .sys {
+    padding: 4px 14px; text-align: center;
+    font-size: 11px; color: var(--muted);
+    animation: min .18s ease;
+  }
+  .sys span {
+    background: var(--surf2); padding: 2px 10px;
+    border-radius: 20px; border: 1px solid var(--border);
+  }
+
+  .banner {
+    text-align: center; padding: 18px 14px;
+    color: var(--muted); font-size: 13px;
+  }
+  .banner strong {
+    font-size: 19px; font-weight: 800; display: block;
+    color: var(--accent); margin-bottom: 4px;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 155px; border-left: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .sbh {
+    padding: 12px 13px 8px;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .1em;
+    color: var(--muted); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #ulist { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; }
+
+  .uitem {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 13px; animation: min .18s ease;
+  }
+  .udot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .uname { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── INPUT ── */
+  .iarea {
+    padding: 10px 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
+    display: flex; gap: 8px; align-items: flex-end;
+  }
+
+  .iwrap { flex: 1; }
+
+  /* 16px = no zoom on iOS/Android */
+  #minput {
+    width: 100%;
+    background: var(--surf2);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 13px;
+    font-family: var(--sans);
+    font-size: 16px;
+    color: var(--text);
+    outline: none; resize: none;
+    max-height: 100px; line-height: 1.4;
+    -webkit-appearance: none;
+    transition: border-color .15s;
+  }
+  #minput:focus { border-color: rgba(91,138,245,.5); }
+  #minput::placeholder { color: var(--muted); }
+
+  #sbtn {
+    background: linear-gradient(135deg, #5b8af5, #8b5cf6);
+    border: none; border-radius: 10px;
+    width: 42px; height: 42px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #sbtn:active { opacity: .8; }
+  #sbtn svg { width: 16px; height: 16px; fill: #fff; }
+
+  #dbanner {
+    display: none;
+    background: rgba(248,113,113,.12);
+    border-bottom: 1px solid rgba(248,113,113,.3);
+    padding: 7px 14px; font-size: 12px;
+    color: var(--danger); text-align: center; flex-shrink: 0;
+  }
+
+  @media (max-width: 580px) { #sidebar { display: none; } }
+</style>
+</head>
+<body>
+
+<!-- PASSCODE -->
+<div id="s-code" class="screen">
+  <div class="card">
+    <div>
+      <div class="logo-title">LocalChat</div>
+      <div class="logo-sub">Enter the access code to continue</div>
+    </div>
+    <div class="field">
+      <label>Access Code</label>
+      <input id="code-in" type="tel" inputmode="numeric" placeholder="Enter 5-digit code"
+        maxlength="5" autocomplete="off">
+      <span class="err-msg" id="code-err">Incorrect code — try again</span>
+    </div>
+    <button class="btn" onclick="checkCode()">Continue →</button>
+  </div>
+</div>
+
+<!-- NAME + CHANNEL -->
+<div id="s-join" class="screen hidden">
+  <div class="card">
+    <div>
+      <div class="logo-title">Join Chat</div>
+      <div class="logo-sub">Pick your name and a channel</div>
+    </div>
+    <div class="field">
+      <label>Your name</label>
+      <input id="name-in" type="text" placeholder="e.g. Alice" maxlength="24"
+        autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>Channel</label>
+      <select id="chan-sel">
+        <option value="General">💬 General</option>
+        <option value="Kids">🧒 Kids</option>
+        <option value="Adults">🍸 Adults</option>
+      </select>
+    </div>
+    <button class="btn" onclick="doJoin()">Join →</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="dbanner">⚠ Reconnecting…</div>
+  <header>
+    <span class="h-logo">LocalChat</span>
+    <div class="tabs">
+      <div class="tab active" data-ch="General"   onclick="switchCh('General')">💬 General</div>
+      <div class="tab"        data-ch="Kids"       onclick="switchCh('Kids')">🧒 Kids</div>
+      <div class="tab"        data-ch="Adults"     onclick="switchCh('Adults')">🍸 Adults</div>
+    </div>
+    <div class="h-right">
+      <div class="dot" id="sdot"></div>
+      <span class="count" id="cnt"></span>
+    </div>
+  </header>
+  <div class="body">
+    <div id="msgs"></div>
+    <div id="sidebar">
+      <div class="sbh" id="sbh">In General</div>
+      <div id="ulist"></div>
+    </div>
+  </div>
+  <div class="iarea">
+    <div class="iwrap">
+      <textarea id="minput" rows="1" placeholder="Message…" maxlength="2000"
+        autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
+    </div>
+    <button id="sbtn" onclick="sendMsg()">
+      <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+const CHANNELS = ['General','Kids','Adults'];
+const EMOJI = { General:'💬', Kids:'🧒', Adults:'🍸' };
+
+let ws, myName, myColor, myCh = 'General';
+let code = '', kaTimer = null, reconnTimer = null;
+
+const $ = id => document.getElementById(id);
+const msgsEl  = $('msgs');
+const minput  = $('minput');
+const sdot    = $('sdot');
+const cnt     = $('cnt');
+const ulist   = $('ulist');
+const dbanner = $('dbanner');
+const sbh     = $('sbh');
+
+// ── PASSCODE ──
+$('code-in').addEventListener('keydown', e => { if(e.key==='Enter') checkCode(); });
+
+function checkCode() {
+  code = $('code-in').value.trim();
+  if (code === '123') {
+    $('s-code').classList.add('hidden');
+    $('s-join').classList.remove('hidden');
+    setTimeout(() => $('name-in').focus(), 80);
+  } else {
+    const el = $('code-in');
+    el.classList.add('err'); $('code-err').classList.add('show');
+    setTimeout(() => {
+      el.value = ''; code = '';
+      el.classList.remove('err'); $('code-err').classList.remove('show');
+      el.focus();
+    }, 1200);
+  }
+}
+
+// ── JOIN ──
+$('name-in').addEventListener('keydown', e => { if(e.key==='Enter') doJoin(); });
+
+function doJoin() {
+  const name = $('name-in').value.trim();
+  if (!name) return;
+  myName = name;
+  myCh = $('chan-sel').value;
+  $('s-join').classList.add('hidden');
+  $('app').style.display = 'flex';
+  connect();
+}
+
+// ── WEBSOCKET ──
+function connect() {
+  clearTimeout(reconnTimer);
+  clearInterval(kaTimer);
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.onopen = () => {
+    setOnline(true);
+    dbanner.style.display = 'none';
+    ws.send(JSON.stringify({ type:'join', name:myName, code, channel:myCh }));
+    // Keep-alive ping every 20s — stops Safari dropping idle connections
+    kaTimer = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({type:'ping'})); } catch(e){}
+      }
+    }, 20000);
+  };
+
+  ws.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if      (m.type==='history') renderHistory(m.messages);
+    else if (m.type==='message' && m.channel===myCh) renderMsg(m);
+    else if (m.type==='system'  && m.channel===myCh) renderSys(m.text);
+    else if (m.type==='users'   && m.channel===myCh) renderUsers(m.users);
+    else if (m.type==='error')   alert(m.text);
+    // pong: ignore
+  };
+
+  ws.onclose = () => {
+    setOnline(false);
+    dbanner.style.display = 'block';
+    clearInterval(kaTimer);
+    reconnTimer = setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => { try { ws.close(); } catch(e){} };
+}
+
+// Reconnect when tab becomes visible again (Safari background kill)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && ws && ws.readyState !== WebSocket.OPEN) connect();
+});
+window.addEventListener('focus', () => {
+  if (ws && ws.readyState !== WebSocket.OPEN) connect();
+});
+
+function setOnline(on) {
+  sdot.className = 'dot' + (on ? ' on' : '');
+}
+
+// ── CHANNELS ──
+function switchCh(ch) {
+  if (ch === myCh) return;
+  myCh = ch;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.className = 'tab' + (t.dataset.ch === ch ? ' active' : '');
+  });
+  sbh.textContent = `In ${ch}`;
+  msgsEl.innerHTML = '';
+  cnt.textContent = ''; ulist.innerHTML = '';
+  addBanner(`${EMOJI[ch]} ${ch}`, 'Switched channel');
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type:'switch_channel', channel:ch }));
+  }
+  minput.placeholder = `Message ${ch}…`;
+}
+
+// ── SEND ──
+minput.addEventListener('input', () => {
+  minput.style.height = 'auto';
+  minput.style.height = Math.min(minput.scrollHeight, 100) + 'px';
+});
+minput.addEventListener('keydown', e => {
+  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+function sendMsg() {
+  const text = minput.value.trim();
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) { connect(); return; }
+  ws.send(JSON.stringify({ type:'message', text }));
+  minput.value = '';
+  minput.style.height = 'auto';
+}
+
+// ── RENDER ──
+function renderHistory(msgs) {
+  msgsEl.innerHTML = '';
+  addBanner(
+    `${EMOJI[myCh]} ${myCh}`,
+    msgs.length ? `Last ${msgs.length} messages` : 'No messages yet — say hello!'
+  );
+  // Use fragment for performance — single DOM update
+  const frag = document.createDocumentFragment();
+  msgs.forEach(m => {
+    if (m.type==='message') frag.appendChild(buildMsg(m));
+    else if (m.type==='system') frag.appendChild(buildSys(m.text));
+  });
+  msgsEl.appendChild(frag);
+  scrollEnd();
+}
+
+function renderMsg(m) { msgsEl.appendChild(buildMsg(m)); scrollEnd(); }
+function renderSys(t) { msgsEl.appendChild(buildSys(t)); scrollEnd(); }
+
+function buildMsg(m) {
+  const isOwn = m.name === myName;
+  if (isOwn && !myColor) myColor = m.color;
+  const d = document.createElement('div');
+  d.className = 'msg' + (isOwn ? ' own' : '');
+  d.innerHTML =
+    `<div class="avatar" style="background:${m.color}">${m.name[0].toUpperCase()}</div>` +
+    `<div class="mc">` +
+      `<div class="mh">` +
+        `<span class="mname" style="color:${m.color}">${esc(m.name)}</span>` +
+        `<span class="mtime">${fmtTime(m.ts)}</span>` +
+      `</div>` +
+      `<div class="mtext">${esc(m.text)}</div>` +
+    `</div>`;
+  return d;
+}
+
+function buildSys(text) {
+  const d = document.createElement('div');
+  d.className = 'sys';
+  d.innerHTML = `<span>${esc(text)}</span>`;
+  return d;
+}
+
+function addBanner(title, sub) {
+  const d = document.createElement('div');
+  d.className = 'banner';
+  d.innerHTML = `<strong>${title}</strong>${esc(sub)}`;
+  msgsEl.appendChild(d);
+}
+
+function renderUsers(users) {
+  cnt.textContent = `${users.length} here`;
+  ulist.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  users.forEach(u => {
+    const d = document.createElement('div');
+    d.className = 'uitem';
+    d.innerHTML = `<div class="udot" style="background:${u.color}"></div><span class="uname">${esc(u.name)}</span>`;
+    frag.appendChild(d);
+  });
+  ulist.appendChild(frag);
+}
+
+function scrollEnd() {
+  requestAnimationFrame(() => { msgsEl.scrollTop = msgsEl.scrollHeight; });
+}
+
+function fmtTime(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
