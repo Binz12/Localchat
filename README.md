@@ -55,3 +55,4 @@ localchat/
 - To change the port, edit `const PORT = 3000;` in `server.js`
 - Messages persist across server restarts via `messages.json`
 - Works on Windows, Mac, and Linux
+- To edit the Passcode Edit line 426 in Index.html and in server.js at Line 9
