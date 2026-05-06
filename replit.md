@@ -1,35 +1,53 @@
 # LocalChat
 
-LAN chat app — a small Node.js + WebSocket chat server with a single-page HTML client. Originally designed for local network use; now configured to run on Replit.
+A real-time LAN/offline chat app for local WiFi networks — users join with an access code, pick a name and channel, then chat in real-time via WebSockets.
 
-## Tech Stack
+## Run & Operate
 
-- Runtime: Node.js 20
-- HTTP/WebSocket server: built-in `http` + `ws`
-- Frontend: single static `index.html` (no build step)
-- Storage: local files (`messages.json` for chat history, `uploads/` for image attachments)
+- **Start**: `npm start` (runs `node server.js` on port 5000)
+- **Access code**: `67563`
+- **No env vars required** — fully self-contained
 
-## Project Structure
+## Stack
 
-- `server.js` — HTTP + WebSocket server (serves the page, handles image uploads, broadcasts chat messages)
-- `index.html` — full client UI
-- `package.json` — dependencies and `npm start` script
-- `messages.json` — auto-created persistent message log per channel
-- `uploads/` — auto-created directory for uploaded images
+- **Runtime**: Node.js 20
+- **Backend**: Plain `http` module + `ws` (WebSocket server)
+- **Frontend**: Single `index.html` SPA (no build step)
+- **Persistence**: `messages.json` (last 100 messages per channel), `uploads/` (images)
 
-## Running on Replit
+## Where things live
 
-- Workflow: `Start application` → `npm start`
-- Server binds `0.0.0.0:5000` (the only port Replit's preview proxies)
-- Access code (login): `67563`
-- Channels: General, Kids, Adults
+- `server.js` — HTTP + WebSocket server, image upload endpoint
+- `index.html` — entire frontend (HTML + CSS + JS)
+- `messages.json` — auto-created, persists chat history per channel
+- `uploads/` — auto-created, stores uploaded image files
 
-## Deployment
+## Architecture decisions
 
-Configured as a `vm` deployment (always-on) because the server keeps in-memory connection state and persists files to local disk, which doesn't fit the stateless autoscale model.
+- Single-file frontend (no framework, no build step) keeps the app portable and dependency-free
+- WebSocket uses `wss://` automatically when page is served over HTTPS (Replit proxy)
+- Access code is hardcoded (`67563`) — app is designed for trusted local/family use
+- Images are uploaded via HTTP POST before being broadcast as WebSocket messages
+- Server pings all clients every 25s to keep Safari connections alive
 
-- Production run command: `node server.js`
+## Product
 
-## Replit-Specific Changes
+- Three chat channels: General, Kids, Adults
+- Real-time messaging with emoji picker and image sharing (up to 5MB)
+- Persistent message history (last 100 per channel) across server restarts
+- Color-coded users, live user list sidebar, image lightbox viewer
 
-- Changed listening port from `3000` to `5000` so the Replit preview can proxy it.
+## User preferences
+
+_Populate as you build_
+
+## Gotchas
+
+- `ws` package must be installed (`npm install` / managed by Replit package manager)
+- The server binds to `0.0.0.0` so it's accessible via Replit's proxy
+- WebSocket URL is derived from `location.host` — works correctly through Replit's HTTPS proxy
+
+## Pointers
+
+- Workflows skill: `.local/skills/workflows/SKILL.md`
+- Package management: `.local/skills/package-management/SKILL.md`

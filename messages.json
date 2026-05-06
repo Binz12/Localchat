@@ -1,0 +1,14 @@
+{
+  "General": [
+    {
+      "type": "message",
+      "name": "TestUser",
+      "color": "#60a5fa",
+      "text": "Hello from migration test!",
+      "ts": 1778059901177,
+      "channel": "General"
+    }
+  ],
+  "Kids": [],
+  "Adults": []
+}
