@@ -1,4 +1,4 @@
-# LocalChat 💬
+# LocalChat 💬 Only chat 
 
 A real-time LAN chat app. Works entirely offline — no internet needed, just a local WiFi network.
 
