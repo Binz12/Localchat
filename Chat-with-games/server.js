@@ -88,8 +88,8 @@ function sendLobbyList(ws) {
 }
 
 function broadcastLobbyList() {
-  for (const [client, user] of clients) {
-    if (user.isGames && client.readyState === 1) {
+  for (const [client] of clients) {
+    if (client.readyState === 1) {
       sendLobbyList(client);
     }
   }
@@ -186,16 +186,19 @@ wss.on('connection', ws => {
         ws.send(JSON.stringify({type:'error',text:'Invalid access code'})); return;
       }
       const name = (data.name||'Player').trim().slice(0,24);
-      user = { name, isGames:true, channel:'__games__' };
-      clients.set(ws, user);
+      // If already joined as a chat user, don't overwrite — just send games data
+      if (!user) {
+        user = { name, isGames:true, channel:'__games__' };
+        clients.set(ws, user);
+      }
       // Send all leaderboards + cookie data for this player
-      ws.send(JSON.stringify({ type:'games_init', leaderboards:gameData.leaderboards, cookieData: gameData.cookieClicker[name]||null }));
+      ws.send(JSON.stringify({ type:'games_init', leaderboards:gameData.leaderboards, cookieData: gameData.cookieClicker[user.name]||null }));
       sendLobbyList(ws);
       return;
     }
 
     // ── GAME: submit score ──
-    if (data.type === 'submit_score' && user?.isGames) {
+    if (data.type === 'submit_score' && user) {
       const { game, score } = data;
       if (!gameData.leaderboards[game]) return;
       addScore(game, user.name, score);
@@ -209,14 +212,14 @@ wss.on('connection', ws => {
     }
 
     // ── GAME: cookie clicker save ──
-    if (data.type === 'cookie_save' && user?.isGames) {
+    if (data.type === 'cookie_save' && user) {
       gameData.cookieClicker[user.name] = data.save;
       saveGameData();
       return;
     }
 
     // ── GAME: TTT create lobby ──
-    if (data.type === 'ttt_create' && user?.isGames) {
+    if (data.type === 'ttt_create' && user) {
       const id = `lobby_${lobbyCounter++}`;
       const lobby = { id, host:user.name, guest:null, hostWs:ws, guestWs:null, board:Array(9).fill(null), turn:'X', status:'waiting' };
       tttLobbies.set(id, lobby);
@@ -226,7 +229,7 @@ wss.on('connection', ws => {
     }
 
     // ── GAME: TTT join lobby ──
-    if (data.type === 'ttt_join' && user?.isGames) {
+    if (data.type === 'ttt_join' && user) {
       const lobby = tttLobbies.get(data.lobbyId);
       if (!lobby || lobby.status !== 'waiting') {
         ws.send(JSON.stringify({type:'error',text:'Lobby not available'})); return;
@@ -243,7 +246,7 @@ wss.on('connection', ws => {
     }
 
     // ── GAME: TTT move ──
-    if (data.type === 'ttt_move' && user?.isGames) {
+    if (data.type === 'ttt_move' && user) {
       const lobby = tttLobbies.get(data.lobbyId);
       if (!lobby || lobby.status !== 'playing') return;
       const isHost  = user.name === lobby.host;
@@ -272,7 +275,7 @@ wss.on('connection', ws => {
     }
 
     // ── GAME: TTT leave lobby ──
-    if (data.type === 'ttt_leave' && user?.isGames) {
+    if (data.type === 'ttt_leave' && user) {
       for (const [id, lobby] of tttLobbies) {
         if (lobby.host === user.name || lobby.guest === user.name) {
           tttBroadcast(lobby, { type:'ttt_abandoned', reason:`${user.name} left` });
@@ -298,7 +301,7 @@ wss.on('connection', ws => {
       broadcastToChannel(channel,{type:'system',text:`${name} joined`,ts:Date.now(),channel});
       broadcastUserList(channel);
 
-    } else if (data.type==='switch_channel' && user && !user.isGames) {
+    } else if (data.type==='switch_channel' && user && user.color) {
       const old=user.channel, nch=CHANNELS.includes(data.channel)?data.channel:'General';
       if(old===nch) return;
       broadcastToChannel(old,{type:'system',text:`${user.name} left`,ts:Date.now(),channel:old});
@@ -307,14 +310,14 @@ wss.on('connection', ws => {
       broadcastToChannel(nch,{type:'system',text:`${user.name} joined`,ts:Date.now(),channel:nch});
       broadcastUserList(nch);
 
-    } else if (data.type==='message' && user && !user.isGames) {
+    } else if (data.type==='message' && user && user.color) {
       const text=(data.text||'').trim().slice(0,2000); if(!text) return;
       const msg={type:'message',name:user.name,color:user.color,text,ts:Date.now(),channel:user.channel};
       channelMessages[user.channel].push(msg);
       if(channelMessages[user.channel].length>MAX_MESSAGES) channelMessages[user.channel].shift();
       saveMessages(); broadcastToChannel(user.channel,msg);
 
-    } else if (data.type==='image' && user && !user.isGames) {
+    } else if (data.type==='image' && user && user.color) {
       const url=(data.url||'').trim(); if(!url.startsWith('/uploads/')) return;
       const msg={type:'image',name:user.name,color:user.color,url,ts:Date.now(),channel:user.channel};
       channelMessages[user.channel].push(msg);
@@ -329,17 +332,17 @@ wss.on('connection', ws => {
   ws.on('close', ()=>{
     if(!user) return;
     clients.delete(ws);
-    if (user.isGames) {
-      // Clean up any TTT lobbies
-      for (const [id,lobby] of tttLobbies) {
-        if (lobby.host===user.name || lobby.guest===user.name) {
-          tttBroadcast(lobby,{type:'ttt_abandoned',reason:`${user.name} disconnected`});
-          tttLobbies.delete(id);
-          broadcastLobbyList();
-          break;
-        }
+    // Clean up any TTT lobbies regardless of chat/games mode
+    for (const [id,lobby] of tttLobbies) {
+      if (lobby.host===user.name || lobby.guest===user.name) {
+        tttBroadcast(lobby,{type:'ttt_abandoned',reason:`${user.name} disconnected`});
+        tttLobbies.delete(id);
+        broadcastLobbyList();
+        break;
       }
-    } else {
+    }
+    // If chat user, announce departure
+    if (user.color) {
       broadcastToChannel(user.channel,{type:'system',text:`${user.name} left`,ts:Date.now(),channel:user.channel});
       broadcastUserList(user.channel);
     }
