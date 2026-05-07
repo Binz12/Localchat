@@ -370,7 +370,6 @@ function connect(){
   ws.onopen=()=>{
     setOnline(true);$('dbanner').style.display='none';
     ws.send(JSON.stringify({type:'join',name:myName,code:myCode,channel:myCh}));
-    ws.send(JSON.stringify({type:'games_join',name:myName,code:myCode}));
     kaTimer=setInterval(()=>{if(ws&&ws.readyState===1)try{ws.send(JSON.stringify({type:'ping'}))}catch(e){}},20000);
   };
 
@@ -443,7 +442,7 @@ const EMOJIS={'😊 Smileys':['😀','😃','😄','😁','😆','😅','😂','
 function buildEP(){const p=$('emoji-picker');p.innerHTML='';for(const[sec,ems]of Object.entries(EMOJIS)){const t=document.createElement('div');t.className='ep-title';t.textContent=sec;p.appendChild(t);const g=document.createElement('div');g.className='ep-grid';ems.forEach(em=>{const b=document.createElement('button');b.textContent=em;b.onclick=()=>insertEmoji(em);g.appendChild(b)});p.appendChild(g)}}
 function toggleEmoji(){const p=$('emoji-picker');if(!p.children.length)buildEP();p.classList.toggle('show')}
 function insertEmoji(em){const s=minput.selectionStart,e=minput.selectionEnd,v=minput.value;minput.value=v.slice(0,s)+em+v.slice(e);minput.selectionStart=minput.selectionEnd=s+em.length;minput.focus();minput.dispatchEvent(new Event('input'))}
-document.addEventListener('click',e=>{if(!$('emoji-btn')?.contains(e.target)&&!$('emoji-picker').contains(e.target))$('emoji-picker').classList.remove('show')});
+document.addEventListener('click',e=>{setTimeout(()=>{if(!$('emoji-btn')?.contains(e.target)&&!$('emoji-picker').contains(e.target))$('emoji-picker').classList.remove('show')},0);});
 
 // ══ CHAT: SEND ══
 minput.addEventListener('input',()=>{minput.style.height='auto';minput.style.height=Math.min(minput.scrollHeight,100)+'px'});
@@ -506,7 +505,7 @@ function closeGame(){
   if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'ttt_leave'}));
   currentGame=null;$('game-hub').style.display='grid';$('game-view').classList.remove('show');$('gv-main').innerHTML='';$('gv-score').textContent='';
 }
-function stopLoops(){gameLoops.forEach(clearInterval);gameLoops=[]}
+function stopLoops(){gameLoops.forEach(l=>{if(typeof l==="number")clearInterval(l);else if(l&&l.clearInterval)l.clearInterval()});gameLoops=[]}
 function setScore(s){$('gv-score').textContent=s}
 function setTitle(t){$('gv-title').textContent=t}
 function submitScore(game,score){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'submit_score',game,score}))}
@@ -569,7 +568,9 @@ function initSnake(){
   const CELL=20,COLS=22,ROWS=19,W=COLS*CELL,H=ROWS*CELL;
   $('gv-main').innerHTML=`<canvas id="sn-c" width="${W}" height="${H}" style="background:#0d0f14;border-radius:10px;border:1px solid var(--border)"></canvas><div class="gov" id="sn-ov"><div class="go-t">🐍 Snake</div><div class="go-s">Arrow keys / WASD to move</div><button class="btn sm" onclick="snStart()">Start Game</button></div>`;
   const cv=$('sn-c'),ctx=cv.getContext('2d');let sn=null;
+  let snLoop=null;
   window.snStart=function(){
+    if(snLoop){clearInterval(snLoop);snLoop=null;}
     $('sn-ov').classList.add('hidden');
     sn={s:[{x:11,y:9},{x:10,y:9},{x:9,y:9}],dir:{x:1,y:0},next:{x:1,y:0},food:snFood(COLS,ROWS,[]),score:0,dead:false};
     const lp=setInterval(()=>{
@@ -577,6 +578,7 @@ function initSnake(){
       sn.dir=sn.next;const h={x:sn.s[0].x+sn.dir.x,y:sn.s[0].y+sn.dir.y};
       if(h.x<0||h.x>=COLS||h.y<0||h.y>=ROWS||sn.s.some(s=>s.x===h.x&&s.y===h.y)){
         sn.dead=true;submitScore('snake',sn.score);
+        clearInterval(lp);snLoop=null;
         const ov=$('sn-ov');ov.innerHTML=`<div class="go-t">Game Over</div><div class="go-sc">${sn.score}</div><button class="btn sm" onclick="snStart()">Play Again</button>`;ov.classList.remove('hidden');return;
       }
       sn.s.unshift(h);
@@ -589,7 +591,7 @@ function initSnake(){
       ctx.fillText('🍎',sn.food.x*CELL+CELL/2,sn.food.y*CELL+CELL/2);
       sn.s.forEach((s,i)=>{ctx.fillStyle=i===0?'#5b8af5':`hsl(${220+i*2},80%,${60-i*.4}%)`;ctx.beginPath();ctx.roundRect?ctx.roundRect(s.x*CELL+1,s.y*CELL+1,CELL-2,CELL-2,3):ctx.rect(s.x*CELL+1,s.y*CELL+1,CELL-2,CELL-2);ctx.fill()});
     },120);
-    gameLoops.push(lp);
+    snLoop=lp;gameLoops.push(lp);
   };
   const kd=e=>{if(!sn)return;const m={ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1},ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0},w:{x:0,y:-1},s:{x:0,y:1},a:{x:-1,y:0},d:{x:1,y:0}};const d=m[e.key];if(!d)return;if(d.x!==-sn.dir.x||d.y!==-sn.dir.y)sn.next=d;if(e.key.startsWith('Arrow'))e.preventDefault()};
   document.addEventListener('keydown',kd);
@@ -708,25 +710,109 @@ function initCoin(){
 // ══ COOKIE CLICKER ══
 function initCookie(){
   setTitle('🍪 Cookie Clicker');
-  const BLDS=[{id:'cursor',name:'Cursor',icon:'👆',desc:'Auto-clicks',bc:15,bCps:.1},{id:'grandma',name:'Grandma',icon:'👵',desc:'Bakes lovingly',bc:100,bCps:.5},{id:'farm',name:'Farm',icon:'🌾',desc:'Cookie plants',bc:1100,bCps:4},{id:'mine',name:'Mine',icon:'⛏',desc:'Digs dough',bc:12000,bCps:10},{id:'factory',name:'Factory',icon:'🏭',desc:'Mass production',bc:130000,bCps:40},{id:'bank',name:'Bank',icon:'🏦',desc:'Cookie interest',bc:1400000,bCps:100},{id:'temple',name:'Temple',icon:'🛕',desc:'Divine cookies',bc:20000000,bCps:400},{id:'wizard',name:'Wizard',icon:'🧙',desc:'Summons cookies',bc:330000000,bCps:6666}];
-  let cc=cookieSave?{...cookieSave}:{cookies:0,total:0,bld:{},lastSave:Date.now()};
-  if(!cc.bld)cc.bld={};
-  // offline earnings
-  if(cc.lastSave){const el=(Date.now()-cc.lastSave)/1000,cps=cmpCps(cc);if(el>5&&cps>0){const e=Math.floor(cps*el*.5);cc.cookies+=e;cc.total+=e}}
-  function cmpCps(s){let c=0;for(const b of BLDS)c+=b.bCps*(s.bld[b.id]||0);return c}
-  function bCost(b,o){return Math.floor(b.bc*Math.pow(1.15,o))}
-  function fmt(n){if(n>=1e12)return(n/1e12).toFixed(1)+'T';if(n>=1e9)return(n/1e9).toFixed(1)+'B';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return Math.floor(n).toLocaleString()}
-  function saveCC(){cc.lastSave=Date.now();cookieSave=cc;if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'cookie_save',save:cc}))}
-  function drawCC(){
-    const cps=cmpCps(cc);setScore(`${fmt(cc.cookies)} 🍪 | ${fmt(cps)}/s`);
-    $('gv-main').innerHTML=`<div class="ck-wrap"><div class="ck-left"><button class="ck-btn" id="ck-b">🍪</button><div class="ck-count">${fmt(cc.cookies)}</div><div class="ck-cps">${fmt(cps)}/sec</div><div style="font-size:11px;color:var(--muted);margin-top:4px">All time: ${fmt(cc.total)}</div></div><div class="ck-right"><div class="sh-title">Shop</div>${BLDS.map(b=>{const o=cc.bld[b.id]||0,cost=bCost(b,o),can=cc.cookies>=cost;return`<div class="sh-item${can?'':' disabled'}" onclick="ckBuy('${b.id}')"><span class="sh-icon">${b.icon}</span><div class="sh-info"><div class="sh-name">${b.name}</div><div class="sh-desc">${b.desc}</div></div><span class="sh-cost">${fmt(cost)}</span><span class="sh-own">${o}</span></div>`}).join('')}</div></div>`;
-    $('ck-b').addEventListener('click',()=>{cc.cookies++;cc.total++;$('ck-b').style.transform='scale(.9)';setTimeout(()=>{const b=$('ck-b');if(b)b.style.transform=''},100);drawCC()});
+  const BLDS=[
+    {id:'cursor',name:'Cursor',icon:'👆',desc:'Clicks once every 10s',bc:15,bCps:.1},
+    {id:'grandma',name:'Grandma',icon:'👵',desc:'Bakes cookies lovingly',bc:100,bCps:.5},
+    {id:'farm',name:'Farm',icon:'🌾',desc:'Grows cookie plants',bc:1100,bCps:4},
+    {id:'mine',name:'Mine',icon:'⛏️',desc:'Digs up cookie dough',bc:12000,bCps:10},
+    {id:'factory',name:'Factory',icon:'🏭',desc:'Mass-produces cookies',bc:130000,bCps:40},
+    {id:'bank',name:'Bank',icon:'🏦',desc:'Generates cookie interest',bc:1400000,bCps:100},
+    {id:'temple',name:'Temple',icon:'🛕',desc:'Divine cookie blessing',bc:20000000,bCps:400},
+    {id:'wizard',name:'Wizard',icon:'🧙',desc:'Summons cookies magically',bc:330000000,bCps:6666}
+  ];
+  // Load save
+  let cc = cookieSave ? JSON.parse(JSON.stringify(cookieSave)) : {cookies:0,total:0,bld:{},lastSave:Date.now()};
+  if(!cc.bld) cc.bld={};
+  if(typeof cc.cookies!=='number') cc.cookies=0;
+  if(typeof cc.total!=='number') cc.total=0;
+  // Offline earnings
+  if(cc.lastSave){
+    const elapsed=(Date.now()-cc.lastSave)/1000;
+    const offCps=cmpCps(cc);
+    if(elapsed>5&&offCps>0){const earned=Math.floor(offCps*elapsed*0.5);cc.cookies+=earned;cc.total+=earned;}
   }
-  window.ckBuy=function(id){const b=BLDS.find(x=>x.id===id);if(!b)return;const o=cc.bld[id]||0,cost=bCost(b,o);if(cc.cookies<cost)return;cc.cookies-=cost;cc.bld[id]=(o+1);drawCC()};
-  const cpsL=setInterval(()=>{if(currentGame!=='cookieClicker')return;const cps=cmpCps(cc);if(cps>0){cc.cookies+=cps/20;cc.total+=cps/20;drawCC()}},50);
-  const svL=setInterval(()=>{if(currentGame==='cookieClicker')saveCC()},30000);
-  gameLoops.push(cpsL,svL);
-  drawCC();
+  function cmpCps(s){let c=0;for(const b of BLDS)c+=b.bCps*(s.bld[b.id]||0);return c;}
+  function bCost(b,o){return Math.floor(b.bc*Math.pow(1.15,o));}
+  function fmt(n){n=Math.floor(n);if(n>=1e12)return(n/1e12).toFixed(1)+'T';if(n>=1e9)return(n/1e9).toFixed(1)+'B';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return n.toLocaleString();}
+  function saveCC(){cc.lastSave=Date.now();cookieSave=JSON.parse(JSON.stringify(cc));if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'cookie_save',save:cookieSave}));}
+
+  // Build the UI once — then only update text, never re-render
+  function buildUI(){
+    $('gv-main').innerHTML=`
+      <div class="ck-wrap">
+        <div class="ck-left">
+          <button class="ck-btn" id="ck-b">🍪</button>
+          <div class="ck-count" id="ck-count">0</div>
+          <div class="ck-cps" id="ck-cps">0/sec</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px" id="ck-total">All time: 0</div>
+        </div>
+        <div class="ck-right">
+          <div class="sh-title">Shop</div>
+          <div id="ck-shop"></div>
+        </div>
+      </div>`;
+    // Cookie click — single persistent listener
+    $('ck-b').addEventListener('click', ()=>{
+      cc.cookies+=1; cc.total+=1;
+      $('ck-b').style.transform='scale(.9)';
+      setTimeout(()=>{const b=$('ck-b');if(b)b.style.transform='';},100);
+      updateUI();
+    });
+    buildShop();
+  }
+
+  function buildShop(){
+    const shop=$('ck-shop'); if(!shop) return;
+    shop.innerHTML='';
+    BLDS.forEach(b=>{
+      const o=cc.bld[b.id]||0, cost=bCost(b,o), can=cc.cookies>=cost;
+      const el=document.createElement('div');
+      el.className='sh-item'+(can?'':' disabled');
+      el.dataset.id=b.id;
+      el.innerHTML=`<span class="sh-icon">${b.icon}</span><div class="sh-info"><div class="sh-name">${b.name}</div><div class="sh-desc">${b.desc} (+${b.bCps}/s each)</div></div><span class="sh-cost" id="sh-cost-${b.id}">${fmt(cost)}</span><span class="sh-own" id="sh-own-${b.id}">${o}</span>`;
+      el.addEventListener('click', ()=>ckBuy(b.id));
+      shop.appendChild(el);
+    });
+  }
+
+  function updateUI(){
+    const cps=cmpCps(cc);
+    setScore(`${fmt(cc.cookies)} 🍪 | ${fmt(cps)}/s`);
+    const countEl=$('ck-count');   if(countEl) countEl.textContent=fmt(cc.cookies);
+    const cpsEl=$('ck-cps');       if(cpsEl)   cpsEl.textContent=fmt(cps)+'/sec';
+    const totEl=$('ck-total');     if(totEl)   totEl.textContent='All time: '+fmt(cc.total);
+    // Update shop items affordability + counts without full re-render
+    BLDS.forEach(b=>{
+      const o=cc.bld[b.id]||0, cost=bCost(b,o), can=cc.cookies>=cost;
+      const el=$('ck-shop')?.querySelector(`[data-id="${b.id}"]`);
+      if(el){ el.className='sh-item'+(can?'':' disabled'); }
+      const costEl=$(`sh-cost-${b.id}`); if(costEl) costEl.textContent=fmt(cost);
+      const ownEl=$(`sh-own-${b.id}`);  if(ownEl)  ownEl.textContent=o;
+    });
+  }
+
+  function ckBuy(id){
+    const b=BLDS.find(x=>x.id===id); if(!b) return;
+    const o=cc.bld[id]||0, cost=bCost(b,o);
+    if(cc.cookies<cost) return;
+    cc.cookies-=cost; cc.bld[id]=(o+1);
+    updateUI(); buildShop(); // rebuild shop to update costs
+  }
+  window.ckBuy=ckBuy;
+
+  // CPS tick — updates every second (not 20x/sec)
+  const cpsL=setInterval(()=>{
+    if(currentGame!=='cookieClicker') return;
+    const cps=cmpCps(cc);
+    if(cps>0){ cc.cookies+=cps; cc.total+=cps; updateUI(); }
+  },1000);
+
+  // Auto-save every 15s
+  const svL=setInterval(()=>{ if(currentGame==='cookieClicker') saveCC(); },15000);
+
+  gameLoops.push(cpsL, svL);
+  buildUI();
+  updateUI();
 }
 
 // ══ UTILS ══
